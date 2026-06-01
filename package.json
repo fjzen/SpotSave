@@ -7,6 +7,7 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/native": "^7.2.5",
     "expo": "~56.0.4",
+    "expo-blur": "~56.0.3",
     "expo-camera": "~56.0.7",
     "expo-constants": "~56.0.15",
     "expo-device": "~56.0.4",
