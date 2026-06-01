@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Image, ScrollView, Switch } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
+import * as FileSystem from 'expo-file-system/legacy';
 import { router } from 'expo-router';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '@/config/firebase';
@@ -22,13 +23,13 @@ export default function AddSpotScreen() {
     }
     let result;
     try {
-      result = await ImagePicker.launchCameraAsync({ allowsEditing: true, quality: 0.7 });
+      result = await ImagePicker.launchCameraAsync({ allowsEditing: false, quality: 0.7 });
     } catch {
       const libStatus = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (libStatus.status !== 'granted') {
         return Alert.alert('Permission denied', 'Photo library access is required.');
       }
-      result = await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, quality: 0.7 });
+      result = await ImagePicker.launchImageLibraryAsync({ allowsEditing: false, quality: 0.7 });
     }
     if (!result.canceled) setImage(result.assets[0].uri);
   };
@@ -44,7 +45,38 @@ export default function AddSpotScreen() {
     Alert.alert('Location captured', `${loc.coords.latitude.toFixed(5)}, ${loc.coords.longitude.toFixed(5)}`);
   };
 
-  // Save spot to Firestore — image URI stored locally, all other data in Firestore
+  // Upload image to Cloudinary using base64
+  const uploadImage = async (uri: string): Promise<string> => {
+    const cloudName = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
+    const uploadPreset = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+
+    console.log('Reading image as base64...');
+    const base64 = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+
+    console.log('Uploading to Cloudinary...');
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file: `data:image/jpeg;base64,${base64}`,
+          upload_preset: uploadPreset,
+        }),
+      }
+    );
+
+    const data = await response.json();
+    console.log('Cloudinary status:', response.status);
+    console.log('Cloudinary response:', JSON.stringify(data).slice(0, 200));
+
+    if (!data.secure_url) throw new Error(data.error?.message || 'Upload failed');
+    return data.secure_url;
+  };
+
+  // Save spot to Firestore
   const handleSave = async () => {
     if (!title) return Alert.alert('Error', 'Please enter a title.');
     if (!image) return Alert.alert('Error', 'Please take a photo.');
@@ -52,10 +84,20 @@ export default function AddSpotScreen() {
 
     setLoading(true);
     try {
+      // Try Cloudinary upload, fall back to local URI if it fails
+      let imageUri = image;
+      let imageUrl: string | null = null;
+      try {
+        imageUrl = await uploadImage(image);
+        console.log('Cloudinary upload success:', imageUrl);
+      } catch (uploadError: any) {
+        console.log('Cloudinary upload failed, using local URI:', uploadError.message);
+      }
+
       const spotData = {
         title,
         note,
-        imageUri: image, // local URI — persists on device
+        imageUri: imageUrl ?? imageUri, // use Cloudinary URL if available, else local
         location,
         isPublic,
         uid: auth.currentUser!.uid,
@@ -67,7 +109,7 @@ export default function AddSpotScreen() {
 
       // Also save to public collection if toggled on
       if (isPublic) {
-        await addDoc(collection(db, 'spots'), { ...spotData, imageUri: null });
+        await addDoc(collection(db, 'spots'), spotData);
       }
 
       console.log('Spot saved!');
@@ -87,6 +129,7 @@ export default function AddSpotScreen() {
       <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
         <Text style={styles.backButtonText}>← Back</Text>
       </TouchableOpacity>
+
       <Text style={styles.title}>Add Spot</Text>
 
       {/* Title and note inputs */}
@@ -132,6 +175,8 @@ export default function AddSpotScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 24, paddingTop: 60 },
+  backButton: { marginBottom: 16 },
+  backButtonText: { fontSize: 16, color: '#666' },
   title: { fontSize: 28, fontWeight: 'bold', marginBottom: 24 },
   input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12, marginBottom: 16 },
   textArea: { height: 80, textAlignVertical: 'top' },
@@ -142,6 +187,4 @@ const styles = StyleSheet.create({
   label: { fontSize: 16 },
   saveButton: { backgroundColor: '#000', padding: 14, borderRadius: 8, alignItems: 'center' },
   saveButtonText: { color: '#fff', fontWeight: '600', fontSize: 16 },
-  backButton: { marginBottom: 16 },
-  backButtonText: { fontSize: 16, color: '#666' },
 });
