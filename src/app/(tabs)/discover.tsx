@@ -3,6 +3,7 @@ import { View, Text, FlatList, TouchableOpacity, StyleSheet, Image } from 'react
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { router } from 'expo-router';
 import { db } from '@/config/firebase';
+import { useLocationName } from '@/hooks/use-location-name';
 
 interface Spot {
   id: string;
@@ -15,12 +16,33 @@ interface Spot {
   createdAt: any;
 }
 
+function SpotCard({ item, onPress }: { item: Spot; onPress: () => void }) {
+  const locationName = useLocationName(item.location.latitude, item.location.longitude);
+  return (
+    <TouchableOpacity style={styles.card} onPress={onPress}>
+      {item.imageUri ? (
+        <Image source={{ uri: item.imageUri }} style={styles.image} />
+      ) : (
+        <View style={styles.imagePlaceholder}>
+          <Text style={styles.imagePlaceholderText}>No photo</Text>
+        </View>
+      )}
+      <View style={styles.cardBody}>
+        <Text style={styles.cardTitle}>{item.title}</Text>
+        {item.note ? <Text style={styles.cardNote}>{item.note}</Text> : null}
+        <Text style={styles.cardLocation}>
+          {locationName ?? `${item.location.latitude.toFixed(4)}, ${item.location.longitude.toFixed(4)}`}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 export default function DiscoverScreen() {
   const [spots, setSpots] = useState<Spot[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Real-time listener on public spots collection
     const q = query(
       collection(db, 'spots'),
       orderBy('createdAt', 'desc')
@@ -50,37 +72,20 @@ export default function DiscoverScreen() {
           data={spots}
           keyExtractor={item => item.id}
           renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.card}
-              onPress={() => router.push({
-                pathname: '/spot-detail',
-                params: {
-                  id: item.id,
-                  title: item.title,
-                  note: item.note || '',
-                  imageUri: item.imageUri || '',
-                  latitude: String(item.location.latitude),
-                  longitude: String(item.location.longitude),
-                  isPublic: String(item.isPublic),
-                  uid: item.uid,
-                }
-              })}
-            >
-              {item.imageUri ? (
-                <Image source={{ uri: item.imageUri }} style={styles.image} />
-              ) : (
-                <View style={styles.imagePlaceholder}>
-                  <Text style={styles.imagePlaceholderText}>No photo</Text>
-                </View>
-              )}
-              <View style={styles.cardBody}>
-                <Text style={styles.cardTitle}>{item.title}</Text>
-                {item.note ? <Text style={styles.cardNote}>{item.note}</Text> : null}
-                <Text style={styles.cardLocation}>
-                  {item.location.latitude.toFixed(4)}, {item.location.longitude.toFixed(4)}
-                </Text>
-              </View>
-            </TouchableOpacity>
+            <SpotCard item={item} onPress={() => router.push({
+              pathname: '/spot-detail',
+              params: {
+                id: item.id,
+                title: item.title,
+                note: item.note || '',
+                imageUri: item.imageUri || '',
+                latitude: String(item.location.latitude),
+                longitude: String(item.location.longitude),
+                isPublic: String(item.isPublic),
+                uid: item.uid,
+                from: 'discover',
+              }
+            })} />
           )}
         />
       )}

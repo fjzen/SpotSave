@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
 import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '@/config/firebase';
+import { useLocationName } from '@/hooks/use-location-name';
 
 export default function SpotDetailScreen() {
-  const { id, title, note, imageUri, latitude, longitude, isPublic, uid } = useLocalSearchParams<{
+  const { id, title, note, imageUri, latitude, longitude, isPublic, uid, from } = useLocalSearchParams<{
     id: string;
     title: string;
     note: string;
@@ -14,9 +14,24 @@ export default function SpotDetailScreen() {
     longitude: string;
     isPublic: string;
     uid: string;
+    from?: string;
   }>();
 
   const isOwner = auth.currentUser?.uid === uid;
+  const lat = parseFloat(latitude);
+  const lng = parseFloat(longitude);
+  const locationName = useLocationName(lat, lng);
+
+  // Navigate back to the correct tab based on where we came from
+  const handleBack = () => {
+    if (from === 'map') {
+      router.replace('/(tabs)/map');
+    } else if (from === 'discover') {
+      router.replace('/(tabs)/discover');
+    } else {
+      router.back();
+    }
+  };
 
   const handleDelete = () => {
     Alert.alert('Delete Spot', 'Are you sure you want to delete this spot?', [
@@ -26,13 +41,11 @@ export default function SpotDetailScreen() {
         style: 'destructive',
         onPress: async () => {
           try {
-            // Delete from user's private collection
             await deleteDoc(doc(db, `users/${auth.currentUser!.uid}/spots/${id}`));
-            // Delete from public collection if it was public
             if (isPublic === 'true') {
               await deleteDoc(doc(db, `spots/${id}`));
             }
-            router.back();
+            handleBack();
           } catch (error: any) {
             Alert.alert('Error', error.message);
           }
@@ -64,12 +77,11 @@ export default function SpotDetailScreen() {
         {/* Note */}
         {note ? <Text style={styles.note}>{note}</Text> : null}
 
-        {/* Location */}
+        {/* Location — city name + precise coords */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Location</Text>
-          <Text style={styles.sectionValue}>
-            {parseFloat(latitude).toFixed(5)}, {parseFloat(longitude).toFixed(5)}
-          </Text>
+          {locationName && <Text style={styles.sectionValue}>{locationName}</Text>}
+          <Text style={styles.sectionCoords}>{lat.toFixed(5)}, {lng.toFixed(5)}</Text>
         </View>
 
         {/* Owner actions */}
@@ -80,7 +92,7 @@ export default function SpotDetailScreen() {
         )}
 
         {/* Back button */}
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <Text style={styles.backButtonText}>← Back</Text>
         </TouchableOpacity>
       </View>
@@ -100,10 +112,11 @@ const styles = StyleSheet.create({
   badgePublic: { backgroundColor: '#000', color: '#fff' },
   badgePrivate: { backgroundColor: '#eee', color: '#666' },
   note: { fontSize: 16, color: '#444', marginBottom: 24, lineHeight: 24 },
-  section: { marginBottom: 16 },
+  section: { marginBottom: 24 },
   sectionLabel: { fontSize: 12, color: '#999', marginBottom: 4 },
-  sectionValue: { fontSize: 15, color: '#333' },
-  deleteButton: { backgroundColor: '#ff3b30', padding: 14, borderRadius: 8, alignItems: 'center', marginTop: 32, marginBottom: 12 },
+  sectionValue: { fontSize: 15, color: '#333', marginBottom: 2 },
+  sectionCoords: { fontSize: 12, color: '#aaa' },
+  deleteButton: { backgroundColor: '#ff3b30', padding: 14, borderRadius: 8, alignItems: 'center', marginTop: 8, marginBottom: 12 },
   deleteButtonText: { color: '#fff', fontWeight: '600' },
   backButton: { padding: 14, alignItems: 'center' },
   backButtonText: { color: '#666' },

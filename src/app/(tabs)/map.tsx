@@ -22,7 +22,6 @@ export default function MapScreen() {
     const uid = auth.currentUser?.uid;
     if (!uid) return;
 
-    // Listen to user's private spots for map pins
     const q = query(
       collection(db, `users/${uid}/spots`),
       orderBy('createdAt', 'desc')
@@ -63,6 +62,7 @@ export default function MapScreen() {
                 longitude: String(spot.location.longitude),
                 isPublic: String(spot.isPublic),
                 uid: spot.uid,
+                from: 'map',
               }
             })}
           >
