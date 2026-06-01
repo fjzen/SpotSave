@@ -55,7 +55,19 @@ export default function MySpotsScreen() {
           data={spots}
           keyExtractor={item => item.id}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.card}>
+              <TouchableOpacity style={styles.card} onPress={() => router.push({
+                pathname: '/spot-detail',
+                params: {
+                  id: item.id,
+                  title: item.title,
+                  note: item.note || '',
+                  imageUri: item.imageUri || '',
+                  latitude: String(item.location.latitude),
+                  longitude: String(item.location.longitude),
+                  isPublic: String(item.isPublic),
+                  uid: item.uid,
+                }
+              })}>
               {item.imageUri && (
                 <Image source={{ uri: item.imageUri }} style={styles.image} />
               )}
