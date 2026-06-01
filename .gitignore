@@ -45,3 +45,4 @@ example
 # others
 .env
 google-services.json
+.idea/
