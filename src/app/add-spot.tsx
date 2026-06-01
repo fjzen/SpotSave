@@ -84,6 +84,9 @@ export default function AddSpotScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <Text style={styles.backButtonText}>← Back</Text>
+      </TouchableOpacity>
       <Text style={styles.title}>Add Spot</Text>
 
       {/* Title and note inputs */}
@@ -139,4 +142,6 @@ const styles = StyleSheet.create({
   label: { fontSize: 16 },
   saveButton: { backgroundColor: '#000', padding: 14, borderRadius: 8, alignItems: 'center' },
   saveButtonText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  backButton: { marginBottom: 16 },
+  backButtonText: { fontSize: 16, color: '#666' },
 });
