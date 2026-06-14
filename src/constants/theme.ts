@@ -14,6 +14,19 @@ export const Colors = {
     backgroundElement: '#F0F0F3',
     backgroundSelected: '#E0E1E6',
     textSecondary: '#60646C',
+    // semantic tokens used across screens
+    card: '#ffffff',
+    border: '#E6E8EB',
+    tint: '#208AEF',
+    danger: '#FF3B30',
+    primary: '#000000',
+    onPrimary: '#ffffff',
+    // tab bar
+    tabActive: '#000000',
+    tabInactive: '#8A8F98',
+    tabBarBg: 'rgba(255,255,255,0.82)',
+    privatePin: '#208AEF',
+    publicPin: '#FF3B30',
   },
   dark: {
     text: '#ffffff',
@@ -21,8 +34,24 @@ export const Colors = {
     backgroundElement: '#212225',
     backgroundSelected: '#2E3135',
     textSecondary: '#B0B4BA',
+    // semantic tokens used across screens
+    card: '#161718',
+    border: '#2E3135',
+    tint: '#3B9EFF',
+    danger: '#FF453A',
+    primary: '#ffffff',
+    onPrimary: '#000000',
+    // tab bar
+    tabActive: '#ffffff',
+    tabInactive: '#7C828B',
+    tabBarBg: 'rgba(20,20,22,0.82)',
+    privatePin: '#3B9EFF',
+    publicPin: '#FF453A',
   },
 } as const;
+
+export type ThemeMode = keyof typeof Colors;
+export type Palette = (typeof Colors)[ThemeMode];
 
 export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 

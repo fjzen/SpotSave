@@ -1,9 +1,12 @@
 import { useEffect } from 'react';
 import { router, Slot } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { useAuth, AuthProvider } from '@/context/AuthContext';
+import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 
 function RootLayoutNav() {
   const { user, loading } = useAuth();
+  const { isDark } = useTheme();
 
   useEffect(() => {
     if (loading) return;
@@ -14,13 +17,20 @@ function RootLayoutNav() {
     }
   }, [user, loading]);
 
-  return <Slot />;
+  return (
+    <>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <Slot />
+    </>
+  );
 }
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <RootLayoutNav />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <RootLayoutNav />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

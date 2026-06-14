@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { router } from 'expo-router';
 import { db } from '@/config/firebase';
 import { useLocationName } from '@/hooks/use-location-name';
+import { useTheme } from '@/context/ThemeContext';
+import { BottomTabInset, type Palette } from '@/constants/theme';
 
 interface Spot {
   id: string;
@@ -16,7 +18,7 @@ interface Spot {
   createdAt: any;
 }
 
-function SpotCard({ item, onPress }: { item: Spot; onPress: () => void }) {
+function SpotCard({ item, onPress, styles }: { item: Spot; onPress: () => void; styles: ReturnType<typeof makeStyles> }) {
   const locationName = useLocationName(item.location.latitude, item.location.longitude);
   return (
     <TouchableOpacity style={styles.card} onPress={onPress}>
@@ -39,6 +41,8 @@ function SpotCard({ item, onPress }: { item: Spot; onPress: () => void }) {
 }
 
 export default function DiscoverScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [spots, setSpots] = useState<Spot[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -71,8 +75,9 @@ export default function DiscoverScreen() {
         <FlatList
           data={spots}
           keyExtractor={item => item.id}
+          contentContainerStyle={styles.listContent}
           renderItem={({ item }) => (
-            <SpotCard item={item} onPress={() => router.push({
+            <SpotCard item={item} styles={styles} onPress={() => router.push({
               pathname: '/spot-detail',
               params: {
                 id: item.id,
@@ -93,17 +98,19 @@ export default function DiscoverScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', paddingTop: 60 },
-  header: { paddingHorizontal: 24, marginBottom: 16 },
-  title: { fontSize: 28, fontWeight: 'bold' },
-  empty: { textAlign: 'center', color: '#999', marginTop: 60 },
-  card: { marginHorizontal: 16, marginBottom: 16, borderRadius: 12, borderWidth: 1, borderColor: '#eee', overflow: 'hidden' },
-  image: { width: '100%', height: 180 },
-  imagePlaceholder: { width: '100%', height: 120, backgroundColor: '#f5f5f5', justifyContent: 'center', alignItems: 'center' },
-  imagePlaceholderText: { color: '#999' },
-  cardBody: { padding: 12 },
-  cardTitle: { fontSize: 16, fontWeight: '600', marginBottom: 4 },
-  cardNote: { fontSize: 14, color: '#666', marginBottom: 4 },
-  cardLocation: { fontSize: 12, color: '#999' },
-});
+const makeStyles = (c: Palette) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.background, paddingTop: 60 },
+    header: { paddingHorizontal: 24, marginBottom: 16 },
+    title: { fontSize: 28, fontWeight: 'bold', color: c.text },
+    empty: { textAlign: 'center', color: c.textSecondary, marginTop: 60 },
+    listContent: { paddingBottom: BottomTabInset + 40 },
+    card: { marginHorizontal: 16, marginBottom: 16, borderRadius: 12, borderWidth: 1, borderColor: c.border, overflow: 'hidden', backgroundColor: c.card },
+    image: { width: '100%', height: 180 },
+    imagePlaceholder: { width: '100%', height: 120, backgroundColor: c.backgroundElement, justifyContent: 'center', alignItems: 'center' },
+    imagePlaceholderText: { color: c.textSecondary },
+    cardBody: { padding: 12 },
+    cardTitle: { fontSize: 16, fontWeight: '600', marginBottom: 4, color: c.text },
+    cardNote: { fontSize: 14, color: c.textSecondary, marginBottom: 4 },
+    cardLocation: { fontSize: 12, color: c.textSecondary },
+  });

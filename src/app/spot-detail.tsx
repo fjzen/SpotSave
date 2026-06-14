@@ -1,11 +1,16 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, Alert, Modal, TextInput, Switch } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '@/config/firebase';
 import { useLocationName } from '@/hooks/use-location-name';
+import { useTheme } from '@/context/ThemeContext';
+import type { Palette } from '@/constants/theme';
 
 export default function SpotDetailScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const { id, title: initialTitle, note: initialNote, imageUri, latitude, longitude, isPublic: initialIsPublic, uid, from } = useLocalSearchParams<{
     id: string;
     title: string;
@@ -140,6 +145,7 @@ export default function SpotDetailScreen() {
               value={editTitle}
               onChangeText={setEditTitle}
               placeholder="Title"
+              placeholderTextColor={colors.textSecondary}
             />
 
             <Text style={styles.fieldLabel}>Note</Text>
@@ -148,13 +154,14 @@ export default function SpotDetailScreen() {
               value={editNote}
               onChangeText={setEditNote}
               placeholder="Note (optional)"
+              placeholderTextColor={colors.textSecondary}
               multiline
               numberOfLines={3}
             />
 
             <View style={styles.switchRow}>
               <Text style={styles.fieldLabel}>Share publicly</Text>
-              <Switch value={editIsPublic} onValueChange={setEditIsPublic} />
+              <Switch value={editIsPublic} onValueChange={setEditIsPublic} trackColor={{ true: colors.tint }} />
             </View>
 
             <TouchableOpacity style={styles.saveButton} onPress={handleSaveEdit} disabled={saving}>
@@ -171,38 +178,39 @@ export default function SpotDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  image: { width: '100%', height: 280 },
-  imagePlaceholder: { width: '100%', height: 200, backgroundColor: '#eee', justifyContent: 'center', alignItems: 'center' },
-  imagePlaceholderText: { color: '#999' },
-  body: { padding: 24 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  title: { fontSize: 24, fontWeight: 'bold', flex: 1 },
-  badge: { fontSize: 12, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, overflow: 'hidden', marginLeft: 8 },
-  badgePublic: { backgroundColor: '#000', color: '#fff' },
-  badgePrivate: { backgroundColor: '#eee', color: '#666' },
-  note: { fontSize: 16, color: '#444', marginBottom: 24, lineHeight: 24 },
-  section: { marginBottom: 24 },
-  sectionLabel: { fontSize: 12, color: '#999', marginBottom: 4 },
-  sectionValue: { fontSize: 15, color: '#333', marginBottom: 2 },
-  sectionCoords: { fontSize: 12, color: '#aaa' },
-  actions: { flexDirection: 'row', gap: 12, marginBottom: 12 },
-  editButton: { flex: 1, borderWidth: 1, borderColor: '#000', padding: 14, borderRadius: 8, alignItems: 'center' },
-  editButtonText: { fontWeight: '600' },
-  deleteButton: { flex: 1, backgroundColor: '#ff3b30', padding: 14, borderRadius: 8, alignItems: 'center' },
-  deleteButtonText: { color: '#fff', fontWeight: '600' },
-  backButton: { padding: 14, alignItems: 'center' },
-  backButtonText: { color: '#666' },
-  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-  modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },
-  modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 20 },
-  fieldLabel: { fontSize: 13, color: '#999', marginBottom: 6 },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 15 },
-  textArea: { height: 80, textAlignVertical: 'top' },
-  switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
-  saveButton: { backgroundColor: '#000', padding: 14, borderRadius: 8, alignItems: 'center', marginBottom: 12 },
-  saveButtonText: { color: '#fff', fontWeight: '600' },
-  cancelButton: { padding: 14, alignItems: 'center' },
-  cancelButtonText: { color: '#666' },
-});
+const makeStyles = (c: Palette) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.background },
+    image: { width: '100%', height: 280 },
+    imagePlaceholder: { width: '100%', height: 200, backgroundColor: c.backgroundElement, justifyContent: 'center', alignItems: 'center' },
+    imagePlaceholderText: { color: c.textSecondary },
+    body: { padding: 24 },
+    row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+    title: { fontSize: 24, fontWeight: 'bold', flex: 1, color: c.text },
+    badge: { fontSize: 12, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, overflow: 'hidden', marginLeft: 8 },
+    badgePublic: { backgroundColor: c.tint, color: '#fff' },
+    badgePrivate: { backgroundColor: c.backgroundSelected, color: c.textSecondary },
+    note: { fontSize: 16, color: c.text, marginBottom: 24, lineHeight: 24 },
+    section: { marginBottom: 24 },
+    sectionLabel: { fontSize: 12, color: c.textSecondary, marginBottom: 4 },
+    sectionValue: { fontSize: 15, color: c.text, marginBottom: 2 },
+    sectionCoords: { fontSize: 12, color: c.textSecondary },
+    actions: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+    editButton: { flex: 1, borderWidth: 1, borderColor: c.primary, padding: 14, borderRadius: 8, alignItems: 'center' },
+    editButtonText: { fontWeight: '600', color: c.text },
+    deleteButton: { flex: 1, backgroundColor: c.danger, padding: 14, borderRadius: 8, alignItems: 'center' },
+    deleteButtonText: { color: '#fff', fontWeight: '600' },
+    backButton: { padding: 14, alignItems: 'center' },
+    backButtonText: { color: c.textSecondary },
+    modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+    modalSheet: { backgroundColor: c.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },
+    modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 20, color: c.text },
+    fieldLabel: { fontSize: 13, color: c.textSecondary, marginBottom: 6 },
+    input: { borderWidth: 1, borderColor: c.border, borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 15, color: c.text, backgroundColor: c.background },
+    textArea: { height: 80, textAlignVertical: 'top' },
+    switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+    saveButton: { backgroundColor: c.primary, padding: 14, borderRadius: 8, alignItems: 'center', marginBottom: 12 },
+    saveButtonText: { color: c.onPrimary, fontWeight: '600' },
+    cancelButton: { padding: 14, alignItems: 'center' },
+    cancelButtonText: { color: c.textSecondary },
+  });

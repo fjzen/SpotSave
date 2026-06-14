@@ -1,61 +1,69 @@
-import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Image, ScrollView, Switch } from 'react-native';
+import { useState, useEffect, useMemo } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Image, ScrollView, Switch, Modal } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as FileSystem from 'expo-file-system/legacy';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '@/config/firebase';
+import { useTheme } from '@/context/ThemeContext';
+import type { Palette } from '@/constants/theme';
 
 export default function AddSpotScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  // A photo may be handed in from the center camera button or the library shortcut.
+  const { imageUri: presetImage } = useLocalSearchParams<{ imageUri?: string }>();
+
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
-  const [image, setImage] = useState<string | null>(null);
+  const [image, setImage] = useState<string | null>(presetImage ?? null);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [isPublic, setIsPublic] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [pickerVisible, setPickerVisible] = useState(false);
 
-  // Sensor 1: Camera — falls back to photo library if camera unavailable (e.g. simulator)
-  const pickImage = async () => {
+  // Auto-capture GPS when screen opens
+  useEffect(() => {
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      const loc = await Location.getCurrentPositionAsync({});
+      setLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+    })();
+  }, []);
+
+  // Sensor 1: Camera
+  const openCamera = async () => {
+    setPickerVisible(false);
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      return Alert.alert('Permission denied', 'Camera access is required to take a photo.');
-    }
+    if (status !== 'granted') return Alert.alert('Permission denied', 'Camera access is required.');
     let result;
     try {
       result = await ImagePicker.launchCameraAsync({ allowsEditing: false, quality: 0.7 });
     } catch {
-      const libStatus = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (libStatus.status !== 'granted') {
-        return Alert.alert('Permission denied', 'Photo library access is required.');
-      }
-      result = await ImagePicker.launchImageLibraryAsync({ allowsEditing: false, quality: 0.7 });
+      return Alert.alert('Camera unavailable', 'Use photo library instead.');
     }
     if (!result.canceled) setImage(result.assets[0].uri);
   };
 
-  // Sensor 2: GPS — request permission and get current coordinates
-  const getLocation = async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      return Alert.alert('Permission denied', 'Location access is required to save your spot.');
-    }
-    const loc = await Location.getCurrentPositionAsync({});
-    setLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
-    Alert.alert('Location captured', `${loc.coords.latitude.toFixed(5)}, ${loc.coords.longitude.toFixed(5)}`);
+  // Sensor 1 (fallback): Photo Library
+  const openLibrary = async () => {
+    setPickerVisible(false);
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') return Alert.alert('Permission denied', 'Photo library access is required.');
+    const result = await ImagePicker.launchImageLibraryAsync({ allowsEditing: false, quality: 0.7 });
+    if (!result.canceled) setImage(result.assets[0].uri);
   };
 
   // Upload image to Cloudinary using base64
   const uploadImage = async (uri: string): Promise<string> => {
     const cloudName = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
     const uploadPreset = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
-
-    console.log('Reading image as base64...');
     const base64 = await FileSystem.readAsStringAsync(uri, {
       encoding: FileSystem.EncodingType.Base64,
     });
-
-    console.log('Uploading to Cloudinary...');
     const response = await fetch(
       `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
       {
@@ -67,11 +75,7 @@ export default function AddSpotScreen() {
         }),
       }
     );
-
     const data = await response.json();
-    console.log('Cloudinary status:', response.status);
-    console.log('Cloudinary response:', JSON.stringify(data).slice(0, 200));
-
     if (!data.secure_url) throw new Error(data.error?.message || 'Upload failed');
     return data.secure_url;
   };
@@ -79,45 +83,36 @@ export default function AddSpotScreen() {
   // Save spot to Firestore
   const handleSave = async () => {
     if (!title) return Alert.alert('Error', 'Please enter a title.');
-    if (!image) return Alert.alert('Error', 'Please take a photo.');
-    if (!location) return Alert.alert('Error', 'Please capture your location.');
+    if (!image) return Alert.alert('Error', 'Please add a photo.');
+    if (!location) return Alert.alert('Error', 'Location not captured yet, please wait.');
 
     setLoading(true);
     try {
-      // Try Cloudinary upload, fall back to local URI if it fails
       let imageUri = image;
-      let imageUrl: string | null = null;
       try {
-        imageUrl = await uploadImage(image);
-        console.log('Cloudinary upload success:', imageUrl);
+        imageUri = await uploadImage(image);
+        console.log('Cloudinary upload success:', imageUri);
       } catch (uploadError: any) {
-        console.log('Cloudinary upload failed, using local URI:', uploadError.message);
+        console.log('Cloudinary failed, using local URI:', uploadError.message);
       }
 
       const spotData = {
         title,
         note,
-        imageUri: imageUrl ?? imageUri, // use Cloudinary URL if available, else local
+        imageUri,
         location,
         isPublic,
         uid: auth.currentUser!.uid,
         createdAt: serverTimestamp(),
       };
 
-      // Always save to private user collection
       await addDoc(collection(db, `users/${auth.currentUser!.uid}/spots`), spotData);
+      if (isPublic) await addDoc(collection(db, 'spots'), spotData);
 
-      // Also save to public collection if toggled on
-      if (isPublic) {
-        await addDoc(collection(db, 'spots'), spotData);
-      }
-
-      console.log('Spot saved!');
       Alert.alert('Saved!', 'Your spot has been saved.', [
         { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (error: any) {
-      console.log('Error saving spot:', error.message);
       Alert.alert('Error', error.message);
     } finally {
       setLoading(false);
@@ -125,66 +120,104 @@ export default function AddSpotScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
         <Text style={styles.backButtonText}>← Back</Text>
       </TouchableOpacity>
 
-      <Text style={styles.title}>Add Spot</Text>
+      <Text style={styles.title}>New Spot</Text>
+
+      {/* GPS status */}
+      <Text style={styles.gpsStatus}>
+        {location ? `📍 ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}` : '📍 Capturing location...'}
+      </Text>
+
+      {/* Photo preview / picker (camera-first) */}
+      {image ? (
+        <Image source={{ uri: image }} style={styles.preview} />
+      ) : (
+        <TouchableOpacity style={styles.photoPlaceholder} onPress={() => setPickerVisible(true)}>
+          <Text style={styles.photoPlaceholderText}>Tap to add a photo</Text>
+        </TouchableOpacity>
+      )}
+      <TouchableOpacity style={styles.button} onPress={() => setPickerVisible(true)}>
+        <Text style={styles.buttonText}>{image ? 'Change Photo' : 'Add Photo'}</Text>
+      </TouchableOpacity>
 
       {/* Title and note inputs */}
       <TextInput
         style={styles.input}
         placeholder="Title"
+        placeholderTextColor={colors.textSecondary}
         value={title}
         onChangeText={setTitle}
       />
       <TextInput
         style={[styles.input, styles.textArea]}
         placeholder="Note (optional)"
+        placeholderTextColor={colors.textSecondary}
         value={note}
         onChangeText={setNote}
         multiline
         numberOfLines={3}
       />
 
-      {/* Camera/photo button + preview */}
-      <TouchableOpacity style={styles.button} onPress={pickImage}>
-        <Text style={styles.buttonText}>{image ? 'Retake Photo' : 'Take Photo'}</Text>
-      </TouchableOpacity>
-      {image && <Image source={{ uri: image }} style={styles.preview} />}
-
-      {/* GPS button */}
-      <TouchableOpacity style={styles.button} onPress={getLocation}>
-        <Text style={styles.buttonText}>{location ? 'Location Captured ✓' : 'Get Location'}</Text>
-      </TouchableOpacity>
-
       {/* Public/private toggle */}
       <View style={styles.row}>
         <Text style={styles.label}>Share publicly</Text>
-        <Switch value={isPublic} onValueChange={setIsPublic} />
+        <Switch value={isPublic} onValueChange={setIsPublic} trackColor={{ true: colors.tint }} />
       </View>
 
       {/* Save button */}
       <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={loading}>
         <Text style={styles.saveButtonText}>{loading ? 'Saving...' : 'Save Spot'}</Text>
       </TouchableOpacity>
+
+      {/* Photo source picker bottom sheet */}
+      <Modal visible={pickerVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>Add Photo</Text>
+            <TouchableOpacity style={styles.modalButton} onPress={openCamera}>
+              <Text style={styles.modalButtonText}>📷  Take Photo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalButton} onPress={openLibrary}>
+              <Text style={styles.modalButtonText}>🖼️  Choose from Library</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.cancelButton} onPress={() => setPickerVisible(false)}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { padding: 24, paddingTop: 60 },
-  backButton: { marginBottom: 16 },
-  backButtonText: { fontSize: 16, color: '#666' },
-  title: { fontSize: 28, fontWeight: 'bold', marginBottom: 24 },
-  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12, marginBottom: 16 },
-  textArea: { height: 80, textAlignVertical: 'top' },
-  button: { borderWidth: 1, borderColor: '#000', padding: 14, borderRadius: 8, alignItems: 'center', marginBottom: 16 },
-  buttonText: { fontWeight: '600' },
-  preview: { width: '100%', height: 200, borderRadius: 8, marginBottom: 16 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
-  label: { fontSize: 16 },
-  saveButton: { backgroundColor: '#000', padding: 14, borderRadius: 8, alignItems: 'center' },
-  saveButtonText: { color: '#fff', fontWeight: '600', fontSize: 16 },
-});
+const makeStyles = (c: Palette) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.background },
+    content: { padding: 24, paddingTop: 60, paddingBottom: 60 },
+    backButton: { marginBottom: 16 },
+    backButtonText: { fontSize: 16, color: c.textSecondary },
+    title: { fontSize: 28, fontWeight: 'bold', marginBottom: 8, color: c.text },
+    gpsStatus: { fontSize: 13, color: c.textSecondary, marginBottom: 24 },
+    input: { borderWidth: 1, borderColor: c.border, borderRadius: 8, padding: 12, marginBottom: 16, color: c.text, backgroundColor: c.card },
+    textArea: { height: 80, textAlignVertical: 'top' },
+    photoPlaceholder: { height: 180, borderRadius: 12, borderWidth: 1, borderColor: c.border, borderStyle: 'dashed', backgroundColor: c.backgroundElement, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+    photoPlaceholderText: { color: c.textSecondary, fontSize: 15 },
+    button: { borderWidth: 1, borderColor: c.primary, padding: 14, borderRadius: 8, alignItems: 'center', marginBottom: 16 },
+    buttonText: { fontWeight: '600', color: c.text },
+    preview: { width: '100%', height: 200, borderRadius: 8, marginBottom: 12 },
+    row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+    label: { fontSize: 16, color: c.text },
+    saveButton: { backgroundColor: c.primary, padding: 14, borderRadius: 8, alignItems: 'center' },
+    saveButtonText: { color: c.onPrimary, fontWeight: '600', fontSize: 16 },
+    modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+    modalSheet: { backgroundColor: c.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },
+    modalTitle: { fontSize: 18, fontWeight: '600', marginBottom: 20, textAlign: 'center', color: c.text },
+    modalButton: { padding: 16, borderRadius: 12, backgroundColor: c.backgroundElement, marginBottom: 12, alignItems: 'center' },
+    modalButtonText: { fontSize: 16, fontWeight: '500', color: c.text },
+    cancelButton: { padding: 14, alignItems: 'center' },
+    cancelButtonText: { color: c.textSecondary, fontSize: 15 },
+  });

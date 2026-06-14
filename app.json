@@ -9,9 +9,16 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.anonymous.SpotSaveTemp"
+      "bundleIdentifier": "com.fjzen.SpotSaveTemp",
+      "infoPlist": {
+        "NSCameraUsageDescription": "SpotSave uses the camera so you can take a photo of the place you want to save.",
+        "NSPhotoLibraryUsageDescription": "SpotSave needs access to your photo library so you can pick an existing photo for a spot.",
+        "NSPhotoLibraryAddUsageDescription": "SpotSave saves photos you capture to your library.",
+        "NSLocationWhenInUseUsageDescription": "SpotSave uses your location to pin saved spots to the map."
+      }
     },
     "android": {
+      "package": "com.fjzen.spotsave",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -35,11 +42,36 @@
             "imageWidth": 76
           }
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "SpotSave uses the camera so you can take a photo of the place you want to save."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "SpotSave needs access to your photo library so you can pick an existing photo for a spot.",
+          "cameraPermission": "SpotSave uses the camera so you can take a photo of the place you want to save."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "SpotSave uses your location to pin saved spots to the map."
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "1c3cfd65-c694-47c6-a050-c588c5005b54"
+      }
     }
   }
 }
