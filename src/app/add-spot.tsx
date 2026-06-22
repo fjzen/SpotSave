@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as FileSystem from 'expo-file-system/legacy';
 import { router, useLocalSearchParams } from 'expo-router';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '@/config/firebase';
 import { useTheme } from '@/context/ThemeContext';
 import type { Palette } from '@/constants/theme';
@@ -23,16 +23,26 @@ export default function AddSpotScreen() {
   const [isPublic, setIsPublic] = useState(false);
   const [loading, setLoading] = useState(false);
   const [pickerVisible, setPickerVisible] = useState(false);
+  const [locationError, setLocationError] = useState(false);
+
+  const captureLocation = async () => {
+    setLocationError(false);
+    setLocation(null);
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') { setLocationError(true); return; }
+    try {
+      const loc = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
+      ]);
+      setLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+    } catch {
+      setLocationError(true);
+    }
+  };
 
   // Auto-capture GPS when screen opens
-  useEffect(() => {
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-      const loc = await Location.getCurrentPositionAsync({});
-      setLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
-    })();
-  }, []);
+  useEffect(() => { captureLocation(); }, []);
 
   // Sensor 1: Camera
   const openCamera = async () => {
@@ -106,8 +116,10 @@ export default function AddSpotScreen() {
         createdAt: serverTimestamp(),
       };
 
-      await addDoc(collection(db, `users/${auth.currentUser!.uid}/spots`), spotData);
-      if (isPublic) await addDoc(collection(db, 'spots'), spotData);
+      const uid = auth.currentUser!.uid;
+      const privateRef = doc(collection(db, `users/${uid}/spots`));
+      await setDoc(privateRef, spotData);
+      if (isPublic) await setDoc(doc(collection(db, 'spots'), privateRef.id), spotData);
 
       Alert.alert('Saved!', 'Your spot has been saved.', [
         { text: 'OK', onPress: () => router.back() },
@@ -128,9 +140,15 @@ export default function AddSpotScreen() {
       <Text style={styles.title}>New Spot</Text>
 
       {/* GPS status */}
-      <Text style={styles.gpsStatus}>
-        {location ? `📍 ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}` : '📍 Capturing location...'}
-      </Text>
+      {locationError ? (
+        <TouchableOpacity onPress={captureLocation} style={styles.gpsRetry}>
+          <Text style={styles.gpsStatus}>📍 Location unavailable — tap to retry</Text>
+        </TouchableOpacity>
+      ) : (
+        <Text style={styles.gpsStatus}>
+          {location ? `📍 ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}` : '📍 Capturing location...'}
+        </Text>
+      )}
 
       {/* Photo preview / picker (camera-first) */}
       {image ? (
@@ -202,6 +220,7 @@ const makeStyles = (c: Palette) =>
     backButtonText: { fontSize: 16, color: c.textSecondary },
     title: { fontSize: 28, fontWeight: 'bold', marginBottom: 8, color: c.text },
     gpsStatus: { fontSize: 13, color: c.textSecondary, marginBottom: 24 },
+    gpsRetry: { marginBottom: 24 },
     input: { borderWidth: 1, borderColor: c.border, borderRadius: 8, padding: 12, marginBottom: 16, color: c.text, backgroundColor: c.card },
     textArea: { height: 80, textAlignVertical: 'top' },
     photoPlaceholder: { height: 180, borderRadius: 12, borderWidth: 1, borderColor: c.border, borderStyle: 'dashed', backgroundColor: c.backgroundElement, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
