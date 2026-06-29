@@ -10,11 +10,13 @@ import { useTheme } from '@/context/ThemeContext';
 // then hand the captured photo straight to the New Spot screen.
 function CameraButton() {
   const { colors } = useTheme();
+  // Drives the press-in/press-out "pop" so the button feels responsive.
   const scale = useRef(new Animated.Value(1)).current;
 
   const animateTo = (to: number) =>
     Animated.spring(scale, { toValue: to, useNativeDriver: true, speed: 40, bounciness: 8 }).start();
 
+  // Ask for camera access, take a photo, and forward it to the New Spot form.
   const openCamera = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
@@ -52,6 +54,8 @@ function CameraButton() {
   );
 }
 
+// The five-tab bar. Colors come from the theme so contrast holds in light/dark,
+// and on iOS the bar is a translucent blur. The middle "tab" is the camera button.
 export default function TabsLayout() {
   const { colors, isDark } = useTheme();
 

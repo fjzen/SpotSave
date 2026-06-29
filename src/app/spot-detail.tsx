@@ -1,14 +1,19 @@
-import { useState, useMemo } from 'react';
-import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, Alert, Modal, TextInput, Switch } from 'react-native';
+import { useState, useMemo, useEffect } from 'react';
+import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, Alert, Modal, TextInput, Switch, KeyboardAvoidingView, Platform } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { doc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { doc, deleteDoc, updateDoc, setDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/config/firebase';
 import { useLocationName } from '@/hooks/use-location-name';
+import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import type { Palette } from '@/constants/theme';
 
+// Detail view for a single spot. Opened from any list/map; the spot's data is
+// passed in as navigation params and kept fresh via a live Firestore listener.
+// Owners can edit or delete; others see a read-only view.
 export default function SpotDetailScreen() {
   const { colors } = useTheme();
+  const { user } = useAuth();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const { id, title: initialTitle, note: initialNote, imageUri, latitude, longitude, isPublic: initialIsPublic, uid, from } = useLocalSearchParams<{
@@ -23,10 +28,13 @@ export default function SpotDetailScreen() {
     from?: string;
   }>();
 
-  const isOwner = auth.currentUser?.uid === uid;
+  // Owner check drives whether Edit/Delete show. Uses the reactive auth user so
+  // it stays correct even if the screen loads before the session is restored.
+  const isOwner = user?.uid === uid;
   const lat = parseFloat(latitude);
   const lng = parseFloat(longitude);
-  const locationName = useLocationName(lat, lng);
+  const hasLocation = !Number.isNaN(lat) && !Number.isNaN(lng);
+  const locationName = useLocationName(hasLocation ? lat : 0, hasLocation ? lng : 0);
 
   // Edit state
   const [editVisible, setEditVisible] = useState(false);
@@ -35,12 +43,33 @@ export default function SpotDetailScreen() {
   const [editIsPublic, setEditIsPublic] = useState(initialIsPublic === 'true');
   const [saving, setSaving] = useState(false);
 
+  // Keep the view in sync with the live document so edits (here or elsewhere)
+  // never leave stale title/note/visibility on screen. The nav params are only
+  // the initial seed. We skip updates while the edit sheet is open so an
+  // incoming snapshot can't clobber what the user is typing.
+  useEffect(() => {
+    if (!id) return;
+    const ref = isOwner
+      ? doc(db, `users/${user!.uid}/spots/${id}`)
+      : doc(db, `spots/${id}`);
+    return onSnapshot(ref, (snap) => {
+      if (!snap.exists() || editVisible) return;
+      const d = snap.data() as { title?: string; note?: string; isPublic?: boolean };
+      setEditTitle(d.title ?? '');
+      setEditNote(d.note ?? '');
+      setEditIsPublic(!!d.isPublic);
+    });
+  }, [id, isOwner, editVisible, user?.uid]);
+
+  // Returns to wherever the user came from (map, discover, or the previous screen).
   const handleBack = () => {
     if (from === 'map') router.replace('/(tabs)/map');
     else if (from === 'discover') router.replace('/(tabs)/discover');
     else router.back();
   };
 
+  // Confirm, then remove the spot from the private collection and, if it was
+  // shared, the public one too.
   const handleDelete = () => {
     Alert.alert('Delete Spot', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
@@ -60,19 +89,37 @@ export default function SpotDetailScreen() {
     ]);
   };
 
+  // Save edits to the private copy, then keep the public copy in sync with the
+  // chosen visibility (create/update it when public, remove it when made private).
   const handleSaveEdit = async () => {
     if (!editTitle) return Alert.alert('Error', 'Title cannot be empty.');
     setSaving(true);
     try {
+      const uid = auth.currentUser!.uid;
       const updates = { title: editTitle, note: editNote, isPublic: editIsPublic };
 
       // Update private collection
-      await updateDoc(doc(db, `users/${auth.currentUser!.uid}/spots/${id}`), updates);
+      await updateDoc(doc(db, `users/${uid}/spots/${id}`), updates);
 
       // Handle public collection changes
       if (editIsPublic) {
-        await updateDoc(doc(db, `spots/${id}`), updates).catch(() => {});
-      } else if (initialIsPublic === 'true' && !editIsPublic) {
+        // Write the full document so a spot that was never public is created
+        // correctly (including createdAt, which the Discover/map query orders by).
+        // merge keeps it idempotent if the public copy already exists.
+        await setDoc(
+          doc(db, `spots/${id}`),
+          {
+            title: editTitle,
+            note: editNote,
+            imageUri: imageUri || null,
+            location: hasLocation ? { latitude: lat, longitude: lng } : null,
+            isPublic: true,
+            uid,
+            createdAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } else if (initialIsPublic === 'true') {
         // Was public, now private — remove from public collection
         await deleteDoc(doc(db, `spots/${id}`)).catch(() => {});
       }
@@ -112,8 +159,14 @@ export default function SpotDetailScreen() {
         {/* Location */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Location</Text>
-          {locationName && <Text style={styles.sectionValue}>{locationName}</Text>}
-          <Text style={styles.sectionCoords}>{lat.toFixed(5)}, {lng.toFixed(5)}</Text>
+          {hasLocation ? (
+            <>
+              {locationName && <Text style={styles.sectionValue}>{locationName}</Text>}
+              <Text style={styles.sectionCoords}>{lat.toFixed(5)}, {lng.toFixed(5)}</Text>
+            </>
+          ) : (
+            <Text style={styles.sectionValue}>Location not set</Text>
+          )}
         </View>
 
         {/* Owner actions */}
@@ -133,9 +186,9 @@ export default function SpotDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Edit bottom sheet */}
+      {/* Edit bottom sheet — KeyboardAvoidingView lifts it above the keyboard */}
       <Modal visible={editVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>Edit Spot</Text>
 
@@ -172,7 +225,7 @@ export default function SpotDetailScreen() {
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </ScrollView>
   );

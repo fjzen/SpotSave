@@ -4,7 +4,8 @@ import MapView, { Marker, Callout } from 'react-native-maps';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
-import { auth, db } from '@/config/firebase';
+import { db } from '@/config/firebase';
+import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import type { Palette } from '@/constants/theme';
 
@@ -18,8 +19,11 @@ interface Spot {
   uid: string;
 }
 
+// Map tab: shows the user's own spots and everyone's public spots as colored
+// pins, centered on the user's current location.
 export default function MapScreen() {
   const { colors } = useTheme();
+  const { user } = useAuth();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [privateSpots, setPrivateSpots] = useState<Spot[]>([]);
@@ -27,18 +31,19 @@ export default function MapScreen() {
   const mapRef = useRef<MapView>(null);
 
   // The user's own spots (shown as "private" pins regardless of share status).
+  // Depends on user.uid so the listener attaches once Firebase restores the session.
   useEffect(() => {
-    const uid = auth.currentUser?.uid;
+    const uid = user?.uid;
     if (!uid) return;
     const q = query(collection(db, `users/${uid}/spots`), orderBy('createdAt', 'desc'));
     return onSnapshot(q, (snapshot) => {
       setPrivateSpots(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Spot)));
     });
-  }, []);
+  }, [user?.uid]);
 
   // Public spots from everyone — exclude the current user's own (they're already shown above).
   useEffect(() => {
-    const uid = auth.currentUser?.uid;
+    const uid = user?.uid;
     const q = query(collection(db, 'spots'), orderBy('createdAt', 'desc'));
     return onSnapshot(q, (snapshot) => {
       const data = snapshot.docs
@@ -46,7 +51,7 @@ export default function MapScreen() {
         .filter(s => s.uid !== uid);
       setPublicSpots(data);
     });
-  }, []);
+  }, [user?.uid]);
 
   // Center the map on the user's current location once GPS resolves,
   // while leaving the map freely pannable afterwards.
@@ -64,6 +69,7 @@ export default function MapScreen() {
     })();
   }, []);
 
+  // Open a spot's detail screen, passing its data along as route params.
   const openSpot = (spot: Spot) =>
     router.push({
       pathname: '/spot-detail',
@@ -80,6 +86,7 @@ export default function MapScreen() {
       },
     });
 
+  // A single map pin with a tappable callout (photo, title, note).
   const renderMarker = (spot: Spot, pinColor: string) => (
     <Marker
       key={`${spot.uid}-${spot.id}`}
@@ -98,10 +105,11 @@ export default function MapScreen() {
     </Marker>
   );
 
-  // Fall back to the first spot, then a default region, until GPS resolves.
+  // Fall back to the first located spot, then a default region, until GPS resolves.
+  const firstLocated = privateSpots.find(s => s.location) ?? publicSpots.find(s => s.location);
   const initialRegion = {
-    latitude: privateSpots[0]?.location.latitude ?? publicSpots[0]?.location.latitude ?? 37.78,
-    longitude: privateSpots[0]?.location.longitude ?? publicSpots[0]?.location.longitude ?? -122.4,
+    latitude: firstLocated?.location?.latitude ?? 37.78,
+    longitude: firstLocated?.location?.longitude ?? -122.4,
     latitudeDelta: 0.05,
     longitudeDelta: 0.05,
   };
@@ -109,8 +117,8 @@ export default function MapScreen() {
   return (
     <View style={styles.container}>
       <MapView ref={mapRef} style={styles.map} initialRegion={initialRegion} showsUserLocation>
-        {privateSpots.map(spot => renderMarker(spot, colors.privatePin))}
-        {publicSpots.map(spot => renderMarker(spot, colors.publicPin))}
+        {privateSpots.filter(s => s.location).map(spot => renderMarker(spot, colors.privatePin))}
+        {publicSpots.filter(s => s.location).map(spot => renderMarker(spot, colors.publicPin))}
       </MapView>
 
       {/* Legend */}

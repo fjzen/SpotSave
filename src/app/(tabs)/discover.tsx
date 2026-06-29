@@ -18,8 +18,9 @@ interface Spot {
   createdAt: any;
 }
 
+// One public spot row, with a placeholder when the spot has no photo.
 function SpotCard({ item, onPress, styles }: { item: Spot; onPress: () => void; styles: ReturnType<typeof makeStyles> }) {
-  const locationName = useLocationName(item.location.latitude, item.location.longitude);
+  const locationName = useLocationName(item.location?.latitude ?? 0, item.location?.longitude ?? 0);
   return (
     <TouchableOpacity style={styles.card} onPress={onPress}>
       {item.imageUri ? (
@@ -33,19 +34,23 @@ function SpotCard({ item, onPress, styles }: { item: Spot; onPress: () => void; 
         <Text style={styles.cardTitle}>{item.title}</Text>
         {item.note ? <Text style={styles.cardNote}>{item.note}</Text> : null}
         <Text style={styles.cardLocation}>
-          {locationName ?? `${item.location.latitude.toFixed(4)}, ${item.location.longitude.toFixed(4)}`}
+          {item.location
+            ? (locationName ?? `${item.location.latitude.toFixed(4)}, ${item.location.longitude.toFixed(4)}`)
+            : 'No location'}
         </Text>
       </View>
     </TouchableOpacity>
   );
 }
 
+// Discover tab: every user's public spots, newest first.
 export default function DiscoverScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [spots, setSpots] = useState<Spot[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Live listener on the shared public collection.
   useEffect(() => {
     const q = query(
       collection(db, 'spots'),
@@ -84,8 +89,8 @@ export default function DiscoverScreen() {
                 title: item.title,
                 note: item.note || '',
                 imageUri: item.imageUri || '',
-                latitude: String(item.location.latitude),
-                longitude: String(item.location.longitude),
+                latitude: item.location ? String(item.location.latitude) : '',
+                longitude: item.location ? String(item.location.longitude) : '',
                 isPublic: String(item.isPublic),
                 uid: item.uid,
                 from: 'discover',

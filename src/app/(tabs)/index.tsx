@@ -4,7 +4,8 @@ import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { router } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import * as ImagePicker from 'expo-image-picker';
-import { auth, db } from '@/config/firebase';
+import { db } from '@/config/firebase';
+import { useAuth } from '@/context/AuthContext';
 import { useLocationName } from '@/hooks/use-location-name';
 import { useTheme } from '@/context/ThemeContext';
 import { BottomTabInset, type Palette } from '@/constants/theme';
@@ -20,9 +21,10 @@ interface Spot {
   createdAt: any;
 }
 
-// Separate component so the hook runs per card
+// One spot row: photo, title, place name, and a public/private badge. It's its
+// own component so the reverse-geocoding hook can run once per card.
 function SpotCard({ item, onPress, styles, colors }: { item: Spot; onPress: () => void; styles: ReturnType<typeof makeStyles>; colors: Palette }) {
-  const locationName = useLocationName(item.location.latitude, item.location.longitude);
+  const locationName = useLocationName(item.location?.latitude ?? 0, item.location?.longitude ?? 0);
   return (
     <TouchableOpacity style={styles.card} onPress={onPress}>
       {item.imageUri && <Image source={{ uri: item.imageUri }} style={styles.image} />}
@@ -30,7 +32,9 @@ function SpotCard({ item, onPress, styles, colors }: { item: Spot; onPress: () =
         <Text style={styles.cardTitle}>{item.title}</Text>
         {item.note ? <Text style={styles.cardNote}>{item.note}</Text> : null}
         <Text style={styles.cardLocation}>
-          {locationName ?? `${item.location.latitude.toFixed(4)}, ${item.location.longitude.toFixed(4)}`}
+          {item.location
+            ? (locationName ?? `${item.location.latitude.toFixed(4)}, ${item.location.longitude.toFixed(4)}`)
+            : 'No location'}
         </Text>
         <Text style={[styles.cardBadge, { backgroundColor: item.isPublic ? colors.tint : colors.backgroundSelected, color: item.isPublic ? '#fff' : colors.textSecondary }]}>
           {item.isPublic ? 'Public' : 'Private'}
@@ -40,17 +44,20 @@ function SpotCard({ item, onPress, styles, colors }: { item: Spot; onPress: () =
   );
 }
 
+// Home tab: the signed-in user's own saved spots, newest first.
 export default function MySpotsScreen() {
   const { colors } = useTheme();
+  const { user } = useAuth();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [spots, setSpots] = useState<Spot[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const uid = auth.currentUser?.uid;
+    const uid = user?.uid;
     if (!uid) return;
 
-    // Real-time listener on user's private spots collection
+    // Real-time listener on user's private spots collection.
+    // Depends on user.uid so it attaches once Firebase restores the session.
     const q = query(
       collection(db, `users/${uid}/spots`),
       orderBy('createdAt', 'desc')
@@ -63,7 +70,7 @@ export default function MySpotsScreen() {
     });
 
     return unsubscribe;
-  }, []);
+  }, [user?.uid]);
 
   // Secondary add path: pick from the photo library, then go straight to New Spot.
   const addFromLibrary = async () => {
@@ -102,8 +109,8 @@ export default function MySpotsScreen() {
                 title: item.title,
                 note: item.note || '',
                 imageUri: item.imageUri || '',
-                latitude: String(item.location.latitude),
-                longitude: String(item.location.longitude),
+                latitude: item.location ? String(item.location.latitude) : '',
+                longitude: item.location ? String(item.location.longitude) : '',
                 isPublic: String(item.isPublic),
                 uid: item.uid,
               }

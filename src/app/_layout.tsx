@@ -1,21 +1,25 @@
-import { useEffect } from 'react';
-import { router, Slot } from 'expo-router';
+import { Slot } from 'expo-router';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useAuth, AuthProvider } from '@/context/AuthContext';
+import { AuthProvider } from '@/context/AuthContext';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
+import { useAuth } from '@/context/AuthContext';
 
+// Renders the active route once the session is known. While Firebase is still
+// restoring the saved login, we show a splash spinner instead of a screen so
+// nothing flashes before routing decisions are made (see app/index.tsx).
 function RootLayoutNav() {
-  const { user, loading } = useAuth();
-  const { isDark } = useTheme();
+  const { loading } = useAuth();
+  const { isDark, colors } = useTheme();
 
-  useEffect(() => {
-    if (loading) return;
-    if (!user) {
-      router.replace('/auth/login');
-    } else {
-      router.replace('/(tabs)');
-    }
-  }, [user, loading]);
+  if (loading) {
+    return (
+      <View style={[styles.splash, { backgroundColor: colors.background }]}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <ActivityIndicator color={colors.text} />
+      </View>
+    );
+  }
 
   return (
     <>
@@ -25,6 +29,8 @@ function RootLayoutNav() {
   );
 }
 
+// App root. Theme wraps Auth so every screen (including the splash) can read
+// colors, and Auth exposes the current user to the whole tree.
 export default function RootLayout() {
   return (
     <ThemeProvider>
@@ -34,3 +40,7 @@ export default function RootLayout() {
     </ThemeProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  splash: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+});

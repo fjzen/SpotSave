@@ -9,10 +9,14 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({ user: null, loading: true });
 
+// Makes the signed-in user available anywhere in the app and tracks whether
+// the session has finished loading, so screens don't act before auth is known.
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Subscribe to Firebase auth changes (login, logout, session restore) and
+  // mirror them into React state. Runs once for the app's lifetime.
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);

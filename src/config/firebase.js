@@ -1,9 +1,10 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { initializeAuth, getReactNativePersistence } from "firebase/auth";
+import { initializeAuth, getAuth, getReactNativePersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+// Credentials come from environment variables so they aren't hard-coded in source.
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -14,11 +15,14 @@ const firebaseConfig = {
 };
 
 // Prevent duplicate app initialization on hot reload
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const isFirstInit = getApps().length === 0;
+const app = isFirstInit ? initializeApp(firebaseConfig) : getApp();
 
-// Use AsyncStorage for persistent auth session across app restarts
-export const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(AsyncStorage),
-});
+// initializeAuth can only run once per app instance. On hot reload the app
+// already exists, so fall back to getAuth() to avoid an "already-initialized" crash.
+export const auth = isFirstInit
+  ? initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) })
+  : getAuth(app);
+// Firestore is the spot database; Storage is available for file uploads.
 export const db = getFirestore(app);
 export const storage = getStorage(app);

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Image, ScrollView, Switch, Modal } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Image, ScrollView, Switch, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -9,6 +9,8 @@ import { auth, db } from '@/config/firebase';
 import { useTheme } from '@/context/ThemeContext';
 import type { Palette } from '@/constants/theme';
 
+// Create-a-spot form: capture location, attach a photo, and save it to Firestore
+// (privately, and to the public feed when shared).
 export default function AddSpotScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -25,6 +27,8 @@ export default function AddSpotScreen() {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [locationError, setLocationError] = useState(false);
 
+  // Get the device's coordinates for the spot, with a timeout + last-known
+  // fallback so a slow or missing GPS fix doesn't hang the form.
   const captureLocation = async () => {
     setLocationError(false);
     setLocation(null);
@@ -37,7 +41,14 @@ export default function AddSpotScreen() {
       ]);
       setLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
     } catch {
-      setLocationError(true);
+      // A live fix can be slow indoors — fall back to the last known position
+      // so the user isn't blocked waiting on GPS.
+      const last = await Location.getLastKnownPositionAsync();
+      if (last) {
+        setLocation({ latitude: last.coords.latitude, longitude: last.coords.longitude });
+      } else {
+        setLocationError(true);
+      }
     }
   };
 
@@ -94,13 +105,27 @@ export default function AddSpotScreen() {
   const handleSave = async () => {
     if (!title) return Alert.alert('Error', 'Please enter a title.');
     if (!image) return Alert.alert('Error', 'Please add a photo.');
-    if (!location) return Alert.alert('Error', 'Location not captured yet, please wait.');
 
+    // GPS may be unavailable indoors — let the user save anyway rather than blocking.
+    if (!location) {
+      return Alert.alert(
+        'No location',
+        "We couldn't get your GPS location. Save without it? The spot won't appear on the map.",
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Save anyway', onPress: () => persistSpot(null) },
+        ]
+      );
+    }
+    persistSpot(location);
+  };
+
+  const persistSpot = async (loc: { latitude: number; longitude: number } | null) => {
     setLoading(true);
     try {
-      let imageUri = image;
+      let imageUri = image!;
       try {
-        imageUri = await uploadImage(image);
+        imageUri = await uploadImage(image!);
         console.log('Cloudinary upload success:', imageUri);
       } catch (uploadError: any) {
         console.log('Cloudinary failed, using local URI:', uploadError.message);
@@ -110,12 +135,15 @@ export default function AddSpotScreen() {
         title,
         note,
         imageUri,
-        location,
+        location: loc,
         isPublic,
         uid: auth.currentUser!.uid,
         createdAt: serverTimestamp(),
       };
 
+      // Always save to the user's private collection; mirror to the shared
+      // public feed with the SAME id when the spot is marked public, so the two
+      // copies can be edited/deleted together later.
       const uid = auth.currentUser!.uid;
       const privateRef = doc(collection(db, `users/${uid}/spots`));
       await setDoc(privateRef, spotData);
@@ -132,7 +160,9 @@ export default function AddSpotScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    // KeyboardAvoidingView keeps the note input and Save button above the keyboard.
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
         <Text style={styles.backButtonText}>← Back</Text>
       </TouchableOpacity>
@@ -209,6 +239,7 @@ export default function AddSpotScreen() {
         </View>
       </Modal>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -11,9 +11,11 @@ import type { Palette } from '@/constants/theme';
 function ThemeSlider() {
   const { colors, isDark, setMode } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  // Measured track width lets us position the sliding thumb over the active half.
   const [trackWidth, setTrackWidth] = useState(0);
   const anim = useRef(new Animated.Value(isDark ? 1 : 0)).current;
 
+  // Animate the thumb whenever the theme changes (including from elsewhere).
   useEffect(() => {
     Animated.spring(anim, { toValue: isDark ? 1 : 0, useNativeDriver: true, speed: 16, bounciness: 6 }).start();
   }, [isDark, anim]);
@@ -43,11 +45,13 @@ function ThemeSlider() {
   );
 }
 
+// Profile tab: shows account info, the light/dark toggle, and logout.
 export default function ProfileScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const user = auth.currentUser;
 
+  // Sign out of Firebase and return to the login screen.
   const handleLogout = async () => {
     try {
       await signOut(auth);
